@@ -2,13 +2,15 @@
 
 #include <cmath>
 #include <numeric>
+#include <set>
 #include <vector>
 
+#include "vibecraft/biome.h"
 #include "vibecraft/block.h"
 #include "vibecraft/chunk.h"
 #include "vibecraft/terrain_generator.h"
 
-// M11: Terrain Generation (Basic)
+// M11: Terrain Generation (Basic) -- updated for M16 biome integration.
 
 namespace {
 
@@ -21,6 +23,23 @@ vibecraft::Chunk MakeChunk(const vibecraft::TerrainGenerator& gen, int cx, int c
     return chunk;
 }
 
+/// Set of block types that are vegetation / tree parts (not terrain surface).
+bool IsVegetation(vibecraft::BlockId id) {
+    return id == vibecraft::BlockRegistry::kOakLog ||
+           id == vibecraft::BlockRegistry::kOakLeaves;
+}
+
+/// Helper: find the terrain surface Y (highest non-air, non-vegetation block).
+int FindTerrainSurface(const vibecraft::Chunk& chunk, int lx, int lz) {
+    for (int y = vibecraft::kChunkSizeY - 1; y >= 0; --y) {
+        vibecraft::BlockId id = chunk.GetBlock(lx, y, lz);
+        if (id != vibecraft::BlockRegistry::kAir && !IsVegetation(id)) {
+            return y;
+        }
+    }
+    return -1;
+}
+
 /// Helper: find the highest non-air Y in a column (local coords).
 int FindSurface(const vibecraft::Chunk& chunk, int lx, int lz) {
     for (int y = vibecraft::kChunkSizeY - 1; y >= 0; --y) {
@@ -29,6 +48,14 @@ int FindSurface(const vibecraft::Chunk& chunk, int lx, int lz) {
         }
     }
     return -1;
+}
+
+/// Set of valid biome surface blocks.
+bool IsSurfaceBlock(vibecraft::BlockId id) {
+    return id == vibecraft::BlockRegistry::kGrass ||
+           id == vibecraft::BlockRegistry::kSand ||
+           id == vibecraft::BlockRegistry::kSnow ||
+           id == vibecraft::BlockRegistry::kStone;
 }
 
 }  // namespace
@@ -68,49 +95,66 @@ TEST(TerrainGen, AirAtTop) {
     }
 }
 
-TEST(TerrainGen, GrassSurface) {
+TEST(TerrainGen, BiomeSurface) {
+    // With biomes, the surface block depends on the biome type.
+    // Verify that every column's surface block matches the biome's definition.
     vibecraft::TerrainGenerator gen(kTestSeed);
     auto chunk = MakeChunk(gen, 1, 2);
 
-    // The highest non-air block in every column must be grass.
+    int world_x0 = 1 * vibecraft::kChunkSizeX;
+    int world_z0 = 2 * vibecraft::kChunkSizeZ;
+
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
         for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-            int surface = FindSurface(chunk, x, z);
+            int surface = FindTerrainSurface(chunk, x, z);
             ASSERT_GE(surface, 0) << "Column (" << x << ", " << z << ") is all air";
-            EXPECT_EQ(chunk.GetBlock(x, surface, z), vibecraft::BlockRegistry::kGrass)
+
+            int bx = world_x0 + x;
+            int bz = world_z0 + z;
+            vibecraft::BiomeType biome = gen.GetBiome(bx, bz);
+            const auto& props = vibecraft::GetBiomeProperties(biome);
+
+            EXPECT_EQ(chunk.GetBlock(x, surface, z), props.surface_block)
                 << "at local (" << x << ", " << surface << ", " << z << ")";
         }
     }
 }
 
-TEST(TerrainGen, DirtBelowGrass) {
+TEST(TerrainGen, FillerBelowSurface) {
+    // With biomes, the filler block (below surface) depends on the biome type.
     vibecraft::TerrainGenerator gen(kTestSeed);
     auto chunk = MakeChunk(gen, 0, 0);
 
-    // 4 blocks of dirt below the grass surface.
+    int world_x0 = 0;
+    int world_z0 = 0;
+
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
         for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-            int surface = FindSurface(chunk, x, z);
+            int surface = FindTerrainSurface(chunk, x, z);
             ASSERT_GE(surface, 5)
-                << "Surface too low for full dirt layer at (" << x << ", " << z << ")";
+                << "Surface too low for full filler layer at (" << x << ", " << z << ")";
+
+            int bx = world_x0 + x;
+            int bz = world_z0 + z;
+            vibecraft::BiomeType biome = gen.GetBiome(bx, bz);
+            const auto& props = vibecraft::GetBiomeProperties(biome);
 
             for (int dy = 1; dy <= 4; ++dy) {
-                EXPECT_EQ(chunk.GetBlock(x, surface - dy, z),
-                          vibecraft::BlockRegistry::kDirt)
+                EXPECT_EQ(chunk.GetBlock(x, surface - dy, z), props.filler_block)
                     << "at local (" << x << ", " << (surface - dy) << ", " << z << ")";
             }
         }
     }
 }
 
-TEST(TerrainGen, StoneBelowDirt) {
+TEST(TerrainGen, StoneBelowFiller) {
     vibecraft::TerrainGenerator gen(kTestSeed);
     auto chunk = MakeChunk(gen, 0, 0);
 
     // Stone from y=1 up to surface - 5.
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
         for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-            int surface = FindSurface(chunk, x, z);
+            int surface = FindTerrainSurface(chunk, x, z);
             ASSERT_GE(surface, 6)
                 << "Surface too low for stone layer at (" << x << ", " << z << ")";
 
@@ -151,8 +195,8 @@ TEST(TerrainGen, DifferentSeeds) {
     int differences = 0;
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
         for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-            int s1 = FindSurface(chunk1, x, z);
-            int s2 = FindSurface(chunk2, x, z);
+            int s1 = FindTerrainSurface(chunk1, x, z);
+            int s2 = FindTerrainSurface(chunk2, x, z);
             if (s1 != s2) {
                 ++differences;
             }
@@ -174,12 +218,12 @@ TEST(TerrainGen, HeightRange) {
         auto chunk = MakeChunk(gen, cx, cz);
         for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
             for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-                int surface = FindSurface(chunk, x, z);
-                EXPECT_GE(surface, 40)
-                    << "Height below 40 at chunk (" << cx << "," << cz
+                int surface = FindTerrainSurface(chunk, x, z);
+                EXPECT_GE(surface, vibecraft::TerrainGenerator::kMinHeight)
+                    << "Height below min at chunk (" << cx << "," << cz
                     << ") local (" << x << "," << z << ")";
-                EXPECT_LE(surface, 120)
-                    << "Height above 120 at chunk (" << cx << "," << cz
+                EXPECT_LE(surface, vibecraft::TerrainGenerator::kMaxHeight)
+                    << "Height above max at chunk (" << cx << "," << cz
                     << ") local (" << x << "," << z << ")";
             }
         }
@@ -196,7 +240,8 @@ TEST(TerrainGen, HeightVariation) {
             auto chunk = MakeChunk(gen, cx, cz);
             for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
                 for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-                    heights.push_back(static_cast<double>(FindSurface(chunk, x, z)));
+                    heights.push_back(
+                        static_cast<double>(FindTerrainSurface(chunk, x, z)));
                 }
             }
         }
@@ -223,20 +268,15 @@ TEST(TerrainGen, ChunkBorderContinuity) {
     auto chunk_b = MakeChunk(gen, 1, 0);
 
     // The right edge of chunk A (local x=15) should match the left edge
-    // of chunk B (local x=0) in terms of terrain height. They share the
-    // same world z coordinates but adjacent world x coordinates.
-    // We verify by checking heights computed from world coordinates.
+    // of chunk B (local x=0) in terms of terrain height. Adjacent columns
+    // should be close, but biome boundaries can cause modest jumps.
     for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
-        // World coords at the border: chunk A x=15 is world x=15,
-        // chunk B x=0 is world x=16. They should be close in height
-        // (noise is continuous).
-        int height_a = FindSurface(chunk_a, 15, z);
-        int height_b = FindSurface(chunk_b, 0, z);
+        int height_a = FindTerrainSurface(chunk_a, 15, z);
+        int height_b = FindTerrainSurface(chunk_b, 0, z);
 
-        // Adjacent columns should be within a small delta
-        // (Perlin noise is smooth, so neighboring world coords differ by at most
-        // a few blocks in height at this frequency).
-        EXPECT_NEAR(height_a, height_b, 5)
+        // With biome blending, adjacent columns should be within a reasonable delta.
+        // Biome boundaries with blending can cause up to ~10-block jumps.
+        EXPECT_NEAR(height_a, height_b, 10)
             << "Height discontinuity at chunk border z=" << z
             << " (height_a=" << height_a << ", height_b=" << height_b << ")";
     }
@@ -244,20 +284,20 @@ TEST(TerrainGen, ChunkBorderContinuity) {
     // Also check the Z axis border: (0,0) and (0,1).
     auto chunk_c = MakeChunk(gen, 0, 1);
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
-        int height_a = FindSurface(chunk_a, x, 15);
-        int height_c = FindSurface(chunk_c, x, 0);
-        EXPECT_NEAR(height_a, height_c, 5)
+        int height_a = FindTerrainSurface(chunk_a, x, 15);
+        int height_c = FindTerrainSurface(chunk_c, x, 0);
+        EXPECT_NEAR(height_a, height_c, 10)
             << "Height discontinuity at Z chunk border x=" << x
             << " (height_a=" << height_a << ", height_c=" << height_c << ")";
     }
 
-    // Verify exact height match via GetHeight (uses same world-space coords).
-    // The height at a world position must be the same regardless of which
-    // chunk generation computed it.
+    // Verify exact height match via GetHeight.
+    // GetHeight returns the terrain surface (no trees), so it should match
+    // FindTerrainSurface from the chunk.
     for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
         int world_z = z;  // chunk (0,0)
         int height_direct = gen.GetHeight(15, world_z);
-        int height_from_chunk = FindSurface(chunk_a, 15, z);
+        int height_from_chunk = FindTerrainSurface(chunk_a, 15, z);
         EXPECT_EQ(height_direct, height_from_chunk)
             << "GetHeight and chunk generation disagree at world (15, " << world_z << ")";
     }

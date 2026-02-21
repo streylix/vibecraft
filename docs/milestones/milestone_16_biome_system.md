@@ -1,5 +1,7 @@
 # Milestone 16 — Biome System
 
+> **Status: COMPLETE** — All 10 tests passing. 5 biomes (Plains, Forest, Desert, Mountains, Tundra) with temp/moisture noise, blended height transitions, tree generation.
+
 ## Description
 Implement a biome system that varies terrain surface blocks, height profile, and vegetation based on temperature and moisture noise maps.
 
