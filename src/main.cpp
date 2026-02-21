@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -43,6 +44,8 @@ static constexpr int kKeySpace = GLFW_KEY_SPACE;
 static constexpr int kKeyEscape = GLFW_KEY_ESCAPE;
 static constexpr int kKeyF3 = GLFW_KEY_F3;
 static constexpr int kKeyF4 = GLFW_KEY_F4;
+static constexpr int kKey1 = GLFW_KEY_1;
+static constexpr int kKey9 = GLFW_KEY_9;
 
 static constexpr int kRenderDistance = 2;  // chunks
 static constexpr float kMoveSpeed = 6.0f;  // blocks per second
@@ -192,21 +195,57 @@ int main() {
         return 1;
     }
 
-    // Crosshair geometry: two lines forming a "+" at the origin.
-    // We'll transform them to screen center via the projection uniform.
+    // Crosshair geometry: two filled rectangles forming a "+".
+    // 12 vertices (2 quads x 2 triangles x 3 vertices).
     unsigned int crosshair_vao = 0, crosshair_vbo = 0;
     {
-        // We'll update the vertex data each frame based on screen size.
         glGenVertexArrays(1, &crosshair_vao);
         glGenBuffers(1, &crosshair_vbo);
         glBindVertexArray(crosshair_vao);
         glBindBuffer(GL_ARRAY_BUFFER, crosshair_vbo);
-        // Reserve space for 4 vertices (2 lines x 2 endpoints, each vec2).
-        glBufferData(GL_ARRAY_BUFFER, 4 * 2 * sizeof(float), nullptr,
+        glBufferData(GL_ARRAY_BUFFER, 12 * 2 * sizeof(float), nullptr,
                      GL_DYNAMIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float),
                               nullptr);
+        glBindVertexArray(0);
+    }
+
+    // --- HUD: textured shader for hotbar block icons ---
+    vibecraft::Shader hud_tex_shader;
+    if (!hud_tex_shader.CompileFromFiles("assets/shaders/hud_tex.vert",
+                                          "assets/shaders/hud_tex.frag")) {
+        std::cerr << "HUD tex shader error: " << hud_tex_shader.GetErrorLog()
+                  << "\n";
+        return 1;
+    }
+
+    // --- HUD: hotbar VAO/VBO ---
+    // Each quad = 6 vertices, each vertex = vec2 pos + vec2 texcoord = 4 floats.
+    // We need: 9 bg quads + 9 icon quads + up to 4 highlight border quads = 22 quads.
+    // Use a generous upper bound: 30 quads * 6 verts * 4 floats.
+    static constexpr int kHotbarMaxQuads = 30;
+    static constexpr int kHotbarMaxVerts = kHotbarMaxQuads * 6;
+    static constexpr int kHotbarFloatsPerVert = 4;  // pos.x, pos.y, uv.x, uv.y
+    unsigned int hotbar_vao = 0, hotbar_vbo = 0;
+    {
+        glGenVertexArrays(1, &hotbar_vao);
+        glGenBuffers(1, &hotbar_vbo);
+        glBindVertexArray(hotbar_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, hotbar_vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     kHotbarMaxVerts * kHotbarFloatsPerVert * sizeof(float),
+                     nullptr, GL_DYNAMIC_DRAW);
+        // Attribute 0: vec2 position.
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE,
+                              kHotbarFloatsPerVert * sizeof(float),
+                              nullptr);
+        // Attribute 1: vec2 texcoord.
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE,
+                              kHotbarFloatsPerVert * sizeof(float),
+                              reinterpret_cast<void*>(2 * sizeof(float)));
         glBindVertexArray(0);
     }
 
@@ -292,9 +331,11 @@ int main() {
             fps_timer -= 1.0f;
         }
 
-        // Poll input.
-        window.PollEvents();
+        // Update input BEFORE polling so that edge detection works:
+        // Update() copies current→previous (last frame's state), then
+        // PollEvents() fires callbacks that modify current (new state).
         input.Update();
+        window.PollEvents();
 
         // Escape to quit.
         if (input.IsKeyPressed(kKeyEscape)) {
@@ -310,6 +351,13 @@ int main() {
         if (input.IsKeyPressed(kKeyF4)) {
             wireframe = !wireframe;
             renderer.SetWireframe(wireframe);
+        }
+
+        // Number keys 1-9 for hotbar selection.
+        for (int k = kKey1; k <= kKey9; ++k) {
+            if (input.IsKeyPressed(k)) {
+                inventory.SetSelectedSlot(k - kKey1);
+            }
         }
 
         // Mouse look.
@@ -464,50 +512,226 @@ int main() {
                                 camera.GetViewMatrix(),
                                 camera.GetProjectionMatrix());
 
-        // --- Draw crosshair ---
+        // --- Draw crosshair (filled quads, not lines) ---
         {
             float sw = static_cast<float>(window.GetWidth());
             float sh = static_cast<float>(window.GetHeight());
             float cx = sw / 2.0f;
             float cy = sh / 2.0f;
-            float half_size = 10.0f;
+            float arm_len = 12.0f;   // half-length of each arm
+            float arm_w = 2.0f;      // half-width of each arm
 
-            float crosshair_verts[] = {
-                cx - half_size, cy,   // horizontal line left
-                cx + half_size, cy,   // horizontal line right
-                cx, cy - half_size,   // vertical line bottom
-                cx, cy + half_size,   // vertical line top
+            // Build two rectangles as 4 triangles (12 vertices).
+            // Horizontal bar: cx-arm_len..cx+arm_len, cy-arm_w..cy+arm_w
+            // Vertical bar:   cx-arm_w..cx+arm_w, cy-arm_len..cy+arm_len
+            float verts[12 * 2] = {
+                // Horizontal bar (2 triangles)
+                cx - arm_len, cy - arm_w,
+                cx + arm_len, cy - arm_w,
+                cx + arm_len, cy + arm_w,
+                cx - arm_len, cy - arm_w,
+                cx + arm_len, cy + arm_w,
+                cx - arm_len, cy + arm_w,
+                // Vertical bar (2 triangles)
+                cx - arm_w, cy - arm_len,
+                cx + arm_w, cy - arm_len,
+                cx + arm_w, cy + arm_len,
+                cx - arm_w, cy - arm_len,
+                cx + arm_w, cy + arm_len,
+                cx - arm_w, cy + arm_len,
             };
 
             glDisable(GL_DEPTH_TEST);
-            glLineWidth(2.0f);
 
             hud_shader.Use();
             glm::mat4 ortho = glm::ortho(0.0f, sw, 0.0f, sh);
             hud_shader.SetMat4("u_projection", ortho);
-            hud_shader.SetVec3("u_color", glm::vec3(1.0f, 1.0f, 1.0f));
-            // Set the vec4 u_color uniform manually via the shader's SetFloat
-            // approach — but Shader only has SetVec3. We need the alpha too.
-            // Use the vec3 overload and set alpha separately... Actually the
-            // fragment shader uses vec4 u_color, but Shader has no SetVec4.
-            // We can use SetVec3 for the color and rely on the uniform
-            // default or use a workaround. Let's just treat the alpha as 1.0
-            // by setting u_color as a vec4 via the program directly.
             {
                 int loc = glGetUniformLocation(hud_shader.GetProgramId(),
                                                "u_color");
                 if (loc >= 0) {
-                    glUniform4f(loc, 1.0f, 1.0f, 1.0f, 1.0f);
+                    glUniform4f(loc, 1.0f, 1.0f, 1.0f, 0.85f);
                 }
             }
 
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
             glBindVertexArray(crosshair_vao);
             glBindBuffer(GL_ARRAY_BUFFER, crosshair_vbo);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(crosshair_verts),
-                            crosshair_verts);
-            glDrawArrays(GL_LINES, 0, 4);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+            glDrawArrays(GL_TRIANGLES, 0, 12);
             glBindVertexArray(0);
 
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+        }
+
+        // --- Draw hotbar ---
+        {
+            float sw = static_cast<float>(window.GetWidth());
+            float sh = static_cast<float>(window.GetHeight());
+
+            // Slot dimensions (pixels in framebuffer coords — works on Retina).
+            constexpr float kSlotSize = 40.0f;
+            constexpr float kSlotGap = 2.0f;
+            constexpr float kSlotPad = 3.0f;  // inset for the icon within slot
+            constexpr float kBorderWidth = 2.0f;
+            constexpr int kSlotCount = 9;
+            float total_width =
+                kSlotCount * kSlotSize + (kSlotCount - 1) * kSlotGap;
+            float start_x = (sw - total_width) / 2.0f;
+            float start_y = 10.0f;  // 10px from bottom
+
+            // Helper lambda: push a quad (2 triangles, 6 verts) into the buffer.
+            // Each vert = { px, py, u, v }.
+            auto push_quad = [](std::vector<float>& buf,
+                                float x0, float y0, float x1, float y1,
+                                float u0, float v0, float u1, float v1) {
+                // Triangle 1.
+                buf.push_back(x0); buf.push_back(y0); buf.push_back(u0); buf.push_back(v0);
+                buf.push_back(x1); buf.push_back(y0); buf.push_back(u1); buf.push_back(v0);
+                buf.push_back(x1); buf.push_back(y1); buf.push_back(u1); buf.push_back(v1);
+                // Triangle 2.
+                buf.push_back(x0); buf.push_back(y0); buf.push_back(u0); buf.push_back(v0);
+                buf.push_back(x1); buf.push_back(y1); buf.push_back(u1); buf.push_back(v1);
+                buf.push_back(x0); buf.push_back(y1); buf.push_back(u0); buf.push_back(v1);
+            };
+
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            glm::mat4 ortho = glm::ortho(0.0f, sw, 0.0f, sh);
+
+            // --- Phase 1: Draw slot backgrounds using the solid-color HUD shader ---
+            {
+                std::vector<float> bg_verts;
+                bg_verts.reserve(kSlotCount * 6 * kHotbarFloatsPerVert);
+
+                for (int i = 0; i < kSlotCount; ++i) {
+                    float x0 = start_x + i * (kSlotSize + kSlotGap);
+                    float y0 = start_y;
+                    float x1 = x0 + kSlotSize;
+                    float y1 = y0 + kSlotSize;
+                    push_quad(bg_verts, x0, y0, x1, y1, 0, 0, 0, 0);
+                }
+
+                hud_shader.Use();
+                hud_shader.SetMat4("u_projection", ortho);
+                {
+                    int loc = glGetUniformLocation(hud_shader.GetProgramId(),
+                                                   "u_color");
+                    if (loc >= 0) {
+                        glUniform4f(loc, 0.2f, 0.2f, 0.2f, 0.7f);
+                    }
+                }
+
+                glBindVertexArray(hotbar_vao);
+                glBindBuffer(GL_ARRAY_BUFFER, hotbar_vbo);
+                glBufferSubData(GL_ARRAY_BUFFER, 0,
+                                static_cast<GLsizeiptr>(bg_verts.size() * sizeof(float)),
+                                bg_verts.data());
+                glDrawArrays(GL_TRIANGLES, 0,
+                             static_cast<GLsizei>(bg_verts.size() / kHotbarFloatsPerVert));
+            }
+
+            // --- Phase 2: Draw selection highlight (border around selected slot) ---
+            {
+                int sel = inventory.GetSelectedSlot();
+                float sx0 = start_x + sel * (kSlotSize + kSlotGap);
+                float sy0 = start_y;
+                float sx1 = sx0 + kSlotSize;
+                float sy1 = sy0 + kSlotSize;
+
+                // Draw 4 thin quads forming a border.
+                std::vector<float> border_verts;
+                border_verts.reserve(4 * 6 * kHotbarFloatsPerVert);
+                float b = kBorderWidth;
+                // Top edge.
+                push_quad(border_verts, sx0, sy1 - b, sx1, sy1, 0, 0, 0, 0);
+                // Bottom edge.
+                push_quad(border_verts, sx0, sy0, sx1, sy0 + b, 0, 0, 0, 0);
+                // Left edge.
+                push_quad(border_verts, sx0, sy0, sx0 + b, sy1, 0, 0, 0, 0);
+                // Right edge.
+                push_quad(border_verts, sx1 - b, sy0, sx1, sy1, 0, 0, 0, 0);
+
+                hud_shader.Use();
+                hud_shader.SetMat4("u_projection", ortho);
+                {
+                    int loc = glGetUniformLocation(hud_shader.GetProgramId(),
+                                                   "u_color");
+                    if (loc >= 0) {
+                        glUniform4f(loc, 1.0f, 1.0f, 1.0f, 0.9f);
+                    }
+                }
+
+                glBindVertexArray(hotbar_vao);
+                glBindBuffer(GL_ARRAY_BUFFER, hotbar_vbo);
+                glBufferSubData(GL_ARRAY_BUFFER, 0,
+                                static_cast<GLsizeiptr>(border_verts.size() * sizeof(float)),
+                                border_verts.data());
+                glDrawArrays(GL_TRIANGLES, 0,
+                             static_cast<GLsizei>(border_verts.size() / kHotbarFloatsPerVert));
+            }
+
+            // --- Phase 3: Draw block textures in non-empty slots ---
+            {
+                hud_tex_shader.Use();
+                hud_tex_shader.SetMat4("u_projection", ortho);
+                hud_tex_shader.SetFloat("u_atlas_tiles_per_row",
+                                         static_cast<float>(atlas.GetTilesPerRow()));
+                hud_tex_shader.SetInt("u_texture_atlas", 0);
+                {
+                    int loc = glGetUniformLocation(hud_tex_shader.GetProgramId(),
+                                                   "u_color");
+                    if (loc >= 0) {
+                        glUniform4f(loc, 1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+                }
+
+                atlas.Bind(0);
+
+                for (int i = 0; i < kSlotCount; ++i) {
+                    vibecraft::ItemSlot slot = inventory.GetSlot(i);
+                    if (slot.IsEmpty()) continue;
+
+                    // Get the top-face texture index for this block.
+                    const vibecraft::BlockType& btype =
+                        registry.GetBlock(slot.block_id);
+                    int tile_index = btype.faces.pos_y;  // top face
+                    if (tile_index < 0) continue;
+
+                    hud_tex_shader.SetFloat("u_tile_index",
+                                             static_cast<float>(tile_index));
+
+                    float x0 = start_x + i * (kSlotSize + kSlotGap) + kSlotPad;
+                    float y0 = start_y + kSlotPad;
+                    float x1 = x0 + kSlotSize - 2.0f * kSlotPad;
+                    float y1 = y0 + kSlotSize - 2.0f * kSlotPad;
+
+                    // Build a single textured quad with UVs [0,1].
+                    float icon_verts[] = {
+                        // Triangle 1.
+                        x0, y0, 0.0f, 0.0f,
+                        x1, y0, 1.0f, 0.0f,
+                        x1, y1, 1.0f, 1.0f,
+                        // Triangle 2.
+                        x0, y0, 0.0f, 0.0f,
+                        x1, y1, 1.0f, 1.0f,
+                        x0, y1, 0.0f, 1.0f,
+                    };
+
+                    glBindVertexArray(hotbar_vao);
+                    glBindBuffer(GL_ARRAY_BUFFER, hotbar_vbo);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0,
+                                    sizeof(icon_verts), icon_verts);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+
+            glDisable(GL_BLEND);
             glEnable(GL_DEPTH_TEST);
         }
 
@@ -538,6 +762,8 @@ int main() {
     chunk_renderer.Clear();
     if (crosshair_vbo) glDeleteBuffers(1, &crosshair_vbo);
     if (crosshair_vao) glDeleteVertexArrays(1, &crosshair_vao);
+    if (hotbar_vbo) glDeleteBuffers(1, &hotbar_vbo);
+    if (hotbar_vao) glDeleteVertexArrays(1, &hotbar_vao);
 
     return 0;
 }
