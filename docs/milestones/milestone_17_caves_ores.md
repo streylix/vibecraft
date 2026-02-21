@@ -1,5 +1,7 @@
 # Milestone 17 — Cave Generation & Ore Distribution
 
+> **Status: COMPLETE** — All 11 tests passing. 3D noise caves, BFS ore veins, depth-restricted distribution (diamond<16, gold<32, iron<64, coal anywhere).
+
 ## Description
 Add cave carving using 3D noise and distribute ores at appropriate depth ranges. Caves create underground exploration spaces, and ores provide mining targets.
 

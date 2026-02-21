@@ -4,8 +4,10 @@
 #include <cstdint>
 
 #include "vibecraft/biome.h"
+#include "vibecraft/cave_generator.h"
 #include "vibecraft/chunk.h"
 #include "vibecraft/noise.h"
+#include "vibecraft/ore_generator.h"
 
 namespace vibecraft {
 
@@ -66,6 +68,8 @@ private:
     uint32_t seed_;
     PerlinNoise noise_;
     BiomeMap biome_map_;
+    CaveGenerator cave_generator_;
+    OreGenerator ore_generator_;
 };
 
 }  // namespace vibecraft

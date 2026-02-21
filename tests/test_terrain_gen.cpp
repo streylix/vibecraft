@@ -147,11 +147,22 @@ TEST(TerrainGen, FillerBelowSurface) {
     }
 }
 
+/// Check whether a block id is stone or an ore that replaces stone.
+/// After M17 (caves & ores), the stone layer may contain ore blocks and
+/// air pockets from cave carving.
+bool IsStoneOrOre(vibecraft::BlockId id) {
+    return id == vibecraft::BlockRegistry::kStone ||
+           id == vibecraft::BlockRegistry::kCoalOre ||
+           id == vibecraft::BlockRegistry::kIronOre ||
+           id == vibecraft::BlockRegistry::kGoldOre ||
+           id == vibecraft::BlockRegistry::kDiamondOre;
+}
+
 TEST(TerrainGen, StoneBelowFiller) {
     vibecraft::TerrainGenerator gen(kTestSeed);
     auto chunk = MakeChunk(gen, 0, 0);
 
-    // Stone from y=1 up to surface - 5.
+    // Stone (or ore / cave air from M17) from y=1 up to surface - 5.
     for (int x = 0; x < vibecraft::kChunkSizeX; ++x) {
         for (int z = 0; z < vibecraft::kChunkSizeZ; ++z) {
             int surface = FindTerrainSurface(chunk, x, z);
@@ -159,8 +170,13 @@ TEST(TerrainGen, StoneBelowFiller) {
                 << "Surface too low for stone layer at (" << x << ", " << z << ")";
 
             for (int y = 1; y <= surface - 5; ++y) {
-                EXPECT_EQ(chunk.GetBlock(x, y, z), vibecraft::BlockRegistry::kStone)
-                    << "at local (" << x << ", " << y << ", " << z << ")";
+                vibecraft::BlockId block = chunk.GetBlock(x, y, z);
+                // After cave generation (M17), some blocks may be carved to air.
+                // After ore generation (M17), some stone blocks become ores.
+                EXPECT_TRUE(IsStoneOrOre(block) ||
+                            block == vibecraft::BlockRegistry::kAir)
+                    << "Unexpected block " << static_cast<int>(block)
+                    << " at local (" << x << ", " << y << ", " << z << ")";
             }
         }
     }

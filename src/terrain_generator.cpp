@@ -10,7 +10,11 @@
 namespace vibecraft {
 
 TerrainGenerator::TerrainGenerator(uint32_t seed)
-    : seed_(seed), noise_(seed), biome_map_(seed) {}
+    : seed_(seed),
+      noise_(seed),
+      biome_map_(seed),
+      cave_generator_(seed),
+      ore_generator_(seed) {}
 
 int TerrainGenerator::GetBaseHeight(int bx, int bz) const {
     float noise_val = noise_.OctaveNoise2D(
@@ -154,6 +158,12 @@ void TerrainGenerator::GenerateChunk(Chunk& chunk) const {
             }
         }
     }
+
+    // Third pass: carve caves (after terrain + trees, before ores).
+    cave_generator_.CarveCaves(chunk);
+
+    // Fourth pass: place ores (after caves, so ores can appear in cave walls).
+    ore_generator_.GenerateOres(chunk);
 }
 
 }  // namespace vibecraft
