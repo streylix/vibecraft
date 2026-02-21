@@ -1,5 +1,7 @@
 # Milestone 19 — Day/Night Cycle & Sky
 
+> **Status: COMPLETE** — All 10 tests passing. 24000-tick cycle, sun angle, ambient light 4-15, sky color transitions, fog matching.
+
 ## Description
 Implement a day/night cycle with time progression, sun/moon positioning, ambient light changes, sky color transitions, and fog that matches the sky color.
 
