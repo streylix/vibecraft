@@ -1,5 +1,7 @@
 # Milestone 24 — UI Screens, Dev Tools & Polish
 
+> **Status: COMPLETE** — All 15 tests passing (7 settings + 4 debug + 4 game loop). Screen stack, settings persistence, F3 overlay, fixed timestep, AO computation, linear fog.
+
 ## Description
 Final polish milestone adding UI screen management, settings system, debug overlay (F3), ambient occlusion, fog rendering, and fixed timestep game loop.
 
