@@ -11,6 +11,7 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(GTest CONFIG REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # --- Game library (shared between game executable and tests) ---
 file(GLOB_RECURSE VIBECRAFT_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
@@ -24,6 +25,7 @@ target_link_libraries(vibecraft_lib PUBLIC
     glfw
     glm::glm
     OpenGL::GL
+    ZLIB::ZLIB
 )
 
 # --- Game executable ---

@@ -1,5 +1,7 @@
 # Milestone 22 — World Persistence (Region Files)
 
+> **Status: COMPLETE** — All 11 tests passing. Region files (32x32 chunks, zlib compressed), block/fluid/light round-trip, player pos/seed/time metadata.
+
 ## Description
 Save and load the world to disk using a region file format. Each region file stores 32x32 chunks. Includes compression for efficient storage and preserves all world state.
 

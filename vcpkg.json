@@ -4,6 +4,7 @@
   "dependencies": [
     "glfw3",
     "glm",
-    "gtest"
+    "gtest",
+    "zlib"
   ]
 }
