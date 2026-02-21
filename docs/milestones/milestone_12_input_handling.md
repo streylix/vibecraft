@@ -1,5 +1,7 @@
 # Milestone 12 — Input Handling & Camera Control
 
+> **Status: COMPLETE** — All 10 tests passing. Key press/release/held detection, mouse delta, scroll, sensitivity, testable without GLFW.
+
 ## Description
 Implement keyboard and mouse input handling for player control and camera movement. Detect key press/release/held states, mouse movement deltas, and scroll wheel input.
 
