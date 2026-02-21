@@ -35,9 +35,9 @@ Dependencies (managed by vcpkg):
 ## Build & Run
 
 ```bash
-# Clone the repo
-git clone https://github.com/streylix/minecraftincpp.git
-cd minecraftincpp
+# Clone the repo (--recursive pulls the vcpkg submodule)
+git clone --recursive https://github.com/streylix/vibecraft.git
+cd vibecraft
 
 # Bootstrap vcpkg (first time only)
 ./vcpkg/bootstrap-vcpkg.sh

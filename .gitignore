@@ -7,4 +7,3 @@ cmake-build-*/
 *.dylib
 *.so
 .DS_Store
-vcpkg/
