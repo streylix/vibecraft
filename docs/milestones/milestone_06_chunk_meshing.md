@@ -1,5 +1,7 @@
 # Milestone 6 — Chunk Meshing v1 (Face Culling)
 
+> **Status: COMPLETE** — All 12 tests passing. Face culling mesher with neighbor support, proper vertex format, boundary handling.
+
 ## Description
 Convert chunk block data into renderable triangle meshes. Use face culling to only generate faces between solid and non-solid blocks (or at chunk boundaries). This is the naive meshing approach before greedy meshing optimization.
 
