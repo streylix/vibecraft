@@ -43,6 +43,9 @@ public:
     /// Clear the dirty flag (typically after meshing).
     void ClearDirty();
 
+    /// Manually set the dirty flag (e.g., when a neighbor boundary changes).
+    void SetDirty();
+
     /// Get the highest non-air Y value for the column at (x, z).
     /// Returns -1 if the entire column is air.
     /// Returns -1 for out-of-bounds coordinates.

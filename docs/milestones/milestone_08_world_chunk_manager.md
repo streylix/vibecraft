@@ -1,5 +1,7 @@
 # Milestone 8 — World & Chunk Manager
 
+> **Status: COMPLETE** — All 12 tests passing. Transparent cross-chunk get/set, lazy creation, dirty propagation, negative coords.
+
 ## Description
 Implement the World class that manages multiple chunks, translates between world and chunk coordinates, and handles chunk loading/unloading. This is the spatial backbone connecting individual chunks into a coherent world.
 

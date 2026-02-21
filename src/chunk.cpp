@@ -54,6 +54,10 @@ void Chunk::ClearDirty() {
     dirty_ = false;
 }
 
+void Chunk::SetDirty() {
+    dirty_ = true;
+}
+
 int Chunk::GetHeightmapValue(int x, int z) const {
     if (x < 0 || x >= kChunkSizeX || z < 0 || z >= kChunkSizeZ) {
         return -1;
