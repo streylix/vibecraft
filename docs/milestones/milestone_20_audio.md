@@ -1,5 +1,7 @@
 # Milestone 20 — Audio System
 
+> **Status: COMPLETE** — All 9 tests passing. Sound registry, volume clamping, distance attenuation, headless mode for testing, 4 WAV placeholders.
+
 ## Description
 Implement a basic audio system for playing sound effects (block break/place, footsteps, ambient sounds) with volume control and distance-based attenuation.
 
