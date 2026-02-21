@@ -11,6 +11,7 @@ out vec4 frag_color;
 
 uniform sampler2D u_texture_atlas;
 uniform float u_atlas_tiles_per_row;  // e.g., 16
+uniform float u_atlas_rows;           // number of tile rows in the atlas
 uniform vec3 u_fog_color;
 uniform float u_fog_start;
 uniform float u_fog_end;
@@ -24,11 +25,12 @@ void main() {
     float tile = floor(v_tex_index + 0.5);
     float col = mod(tile, u_atlas_tiles_per_row);
     float row = floor(tile / u_atlas_tiles_per_row);
-    float tile_uv_size = 1.0 / u_atlas_tiles_per_row;
+    float u_tile_size = 1.0 / u_atlas_tiles_per_row;
+    float v_tile_size = 1.0 / u_atlas_rows;
 
     // Fractional part tiles across greedy-merged faces.
-    vec2 within_tile = fract(v_tex_coord) * tile_uv_size;
-    vec2 tile_origin = vec2(col, row) * tile_uv_size;
+    vec2 within_tile = fract(v_tex_coord) * vec2(u_tile_size, v_tile_size);
+    vec2 tile_origin = vec2(col * u_tile_size, row * v_tile_size);
     vec2 atlas_uv = tile_origin + within_tile;
 
     vec4 tex_color = texture(u_texture_atlas, atlas_uv);

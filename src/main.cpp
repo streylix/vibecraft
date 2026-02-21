@@ -573,8 +573,13 @@ int main() {
 
         // Set up shader uniforms.
         block_shader.Use();
+        int atlas_tpr = atlas.GetTilesPerRow();
+        int atlas_rows = (atlas.GetAtlasHeight() + atlas.GetTileSize() - 1) /
+                          atlas.GetTileSize();
         block_shader.SetFloat("u_atlas_tiles_per_row",
-                               static_cast<float>(atlas.GetTilesPerRow()));
+                               static_cast<float>(atlas_tpr));
+        block_shader.SetFloat("u_atlas_rows",
+                               static_cast<float>(atlas_rows));
         block_shader.SetVec3("u_fog_color", sky_color);
         block_shader.SetFloat("u_fog_start",
                                static_cast<float>((kRenderDistance - 2) * 16));
@@ -755,7 +760,9 @@ int main() {
                 hud_tex_shader.Use();
                 hud_tex_shader.SetMat4("u_projection", ortho);
                 hud_tex_shader.SetFloat("u_atlas_tiles_per_row",
-                                         static_cast<float>(atlas.GetTilesPerRow()));
+                                         static_cast<float>(atlas_tpr));
+                hud_tex_shader.SetFloat("u_atlas_rows",
+                                         static_cast<float>(atlas_rows));
                 hud_tex_shader.SetInt("u_texture_atlas", 0);
                 {
                     int loc = glGetUniformLocation(hud_tex_shader.GetProgramId(),
