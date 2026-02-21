@@ -1,5 +1,7 @@
 # Milestone 4 — Chunk Data Storage
 
+> **Status: COMPLETE** — All 15 tests passing. 16x16x256 chunk with O(1) access, heightmap, dirty flags.
+
 ## Description
 Implement the core chunk data structure that stores a 16x16x256 column of blocks. This is the fundamental spatial data container for the voxel world.
 
