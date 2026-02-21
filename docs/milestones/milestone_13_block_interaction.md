@@ -1,5 +1,7 @@
 # Milestone 13 — Block Interaction (Raycast / Break / Place)
 
+> **Status: COMPLETE** — All 15 tests passing (8 raycast + 7 interaction). DDA raycast, timed breaking, block placement with collision checks.
+
 ## Description
 Implement block raycasting for target selection, timed block breaking with hardness, and block placement on faces. This enables the core gameplay loop of mining and building.
 
