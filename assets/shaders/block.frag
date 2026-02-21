@@ -5,16 +5,37 @@ in float v_tex_index;
 in vec3 v_normal;
 in float v_ao;
 in vec3 v_frag_pos;
+in float v_dist;
 
 out vec4 frag_color;
 
 uniform sampler2D u_texture_atlas;
+uniform float u_atlas_tiles_per_row;  // e.g., 16
+uniform vec3 u_fog_color;
+uniform float u_fog_start;
+uniform float u_fog_end;
 
-// Simple directional light for basic shading.
+// Directional sun light.
 const vec3 light_dir = normalize(vec3(0.3, 1.0, 0.5));
-const float ambient = 0.4;
+const float ambient = 0.35;
 
 void main() {
+    // Compute atlas UV from tile index and per-face tex_coord.
+    float tile = floor(v_tex_index + 0.5);
+    float col = mod(tile, u_atlas_tiles_per_row);
+    float row = floor(tile / u_atlas_tiles_per_row);
+    float tile_uv_size = 1.0 / u_atlas_tiles_per_row;
+
+    // Fractional part tiles across greedy-merged faces.
+    vec2 within_tile = fract(v_tex_coord) * tile_uv_size;
+    vec2 tile_origin = vec2(col, row) * tile_uv_size;
+    vec2 atlas_uv = tile_origin + within_tile;
+
+    vec4 tex_color = texture(u_texture_atlas, atlas_uv);
+
+    // Discard fully transparent fragments.
+    if (tex_color.a < 0.1) discard;
+
     // Basic diffuse lighting.
     float diff = max(dot(normalize(v_normal), light_dir), 0.0);
     float light = ambient + (1.0 - ambient) * diff;
@@ -22,9 +43,11 @@ void main() {
     // Apply ambient occlusion.
     light *= v_ao;
 
-    // Sample texture (placeholder: solid white until atlas is set up).
-    vec4 tex_color = vec4(1.0);
-    // tex_color = texture(u_texture_atlas, v_tex_coord);
+    vec3 color = tex_color.rgb * light;
 
-    frag_color = vec4(tex_color.rgb * light, tex_color.a);
+    // Linear fog.
+    float fog_factor = clamp((u_fog_end - v_dist) / (u_fog_end - u_fog_start), 0.0, 1.0);
+    color = mix(u_fog_color, color, fog_factor);
+
+    frag_color = vec4(color, tex_color.a);
 }

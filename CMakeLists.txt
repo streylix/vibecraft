@@ -9,7 +9,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # --- Dependencies via vcpkg ---
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
+if(NOT APPLE)
+    find_package(OpenGL REQUIRED)
+endif()
 find_package(GTest CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 
@@ -24,9 +26,13 @@ target_include_directories(vibecraft_lib PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_link_libraries(vibecraft_lib PUBLIC
     glfw
     glm::glm
-    OpenGL::GL
     ZLIB::ZLIB
 )
+if(APPLE)
+    target_link_libraries(vibecraft_lib PUBLIC "-framework OpenGL")
+else()
+    target_link_libraries(vibecraft_lib PUBLIC OpenGL::GL)
+endif()
 
 # --- Game executable ---
 add_executable(vibecraft src/main.cpp)
