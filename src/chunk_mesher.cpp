@@ -1,5 +1,7 @@
 #include "vibecraft/chunk_mesher.h"
 
+#include <vector>
+
 #include <glm/glm.hpp>
 
 namespace vibecraft {
@@ -226,6 +228,87 @@ bool ShouldEmitFace(BlockId current_id, BlockId neighbor_id,
     return false;
 }
 
+/// Emit a greedy-merged quad.
+/// The quad lies on a plane perpendicular to the face direction.
+/// (u_start, v_start) is the starting corner in the 2D slice.
+/// (u_span, v_span) is the width/height of the merged rectangle.
+/// slice_coord is the position along the face's normal axis.
+///
+/// The mapping of (slice_coord, u, v) to (x, y, z) depends on the face.
+void EmitGreedyQuad(MeshData& mesh, Face face, int slice_coord,
+                    int u_start, int v_start, int u_span, int v_span,
+                    float tex_index, float ao) {
+    glm::vec3 normal = FaceNormal(face);
+    uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
+
+    float fu = static_cast<float>(u_start);
+    float fv = static_cast<float>(v_start);
+    float fw = static_cast<float>(u_span);
+    float fh = static_cast<float>(v_span);
+    float fs = static_cast<float>(slice_coord);
+
+    // Tiled UVs: range [0, u_span] x [0, v_span].
+    glm::vec2 uv00{0.0f, 0.0f};
+    glm::vec2 uv10{fw, 0.0f};
+    glm::vec2 uv11{fw, fh};
+    glm::vec2 uv01{0.0f, fh};
+
+    glm::vec3 v0, v1, v2, v3;
+
+    // For each face, map (slice, u, v) back to (x, y, z).
+    // The face sits at slice_coord (or slice_coord+1 for positive faces).
+    switch (face) {
+        case Face::kPosX:  // axis = X, u = Z, v = Y; face at x = slice_coord + 1
+            v0 = {fs + 1, fv,      fu};
+            v1 = {fs + 1, fv,      fu + fw};
+            v2 = {fs + 1, fv + fh, fu + fw};
+            v3 = {fs + 1, fv + fh, fu};
+            break;
+        case Face::kNegX:  // axis = X, u = Z, v = Y; face at x = slice_coord
+            v0 = {fs, fv,      fu + fw};
+            v1 = {fs, fv,      fu};
+            v2 = {fs, fv + fh, fu};
+            v3 = {fs, fv + fh, fu + fw};
+            break;
+        case Face::kPosY:  // axis = Y, u = X, v = Z; face at y = slice_coord + 1
+            v0 = {fu,      fs + 1, fv};
+            v1 = {fu + fw, fs + 1, fv};
+            v2 = {fu + fw, fs + 1, fv + fh};
+            v3 = {fu,      fs + 1, fv + fh};
+            break;
+        case Face::kNegY:  // axis = Y, u = X, v = Z; face at y = slice_coord
+            v0 = {fu,      fs, fv + fh};
+            v1 = {fu + fw, fs, fv + fh};
+            v2 = {fu + fw, fs, fv};
+            v3 = {fu,      fs, fv};
+            break;
+        case Face::kPosZ:  // axis = Z, u = X, v = Y; face at z = slice_coord + 1
+            v0 = {fu + fw, fv,      fs + 1};
+            v1 = {fu,      fv,      fs + 1};
+            v2 = {fu,      fv + fh, fs + 1};
+            v3 = {fu + fw, fv + fh, fs + 1};
+            break;
+        case Face::kNegZ:  // axis = Z, u = X, v = Y; face at z = slice_coord
+            v0 = {fu,      fv,      fs};
+            v1 = {fu + fw, fv,      fs};
+            v2 = {fu + fw, fv + fh, fs};
+            v3 = {fu,      fv + fh, fs};
+            break;
+    }
+
+    mesh.vertices.push_back({v0, uv00, tex_index, normal, ao});
+    mesh.vertices.push_back({v1, uv10, tex_index, normal, ao});
+    mesh.vertices.push_back({v2, uv11, tex_index, normal, ao});
+    mesh.vertices.push_back({v3, uv01, tex_index, normal, ao});
+
+    mesh.indices.push_back(base);
+    mesh.indices.push_back(base + 1);
+    mesh.indices.push_back(base + 2);
+    mesh.indices.push_back(base);
+    mesh.indices.push_back(base + 2);
+    mesh.indices.push_back(base + 3);
+}
+
 }  // namespace
 
 MeshData BuildMesh(const Chunk& chunk, const NeighborData& neighbors,
@@ -261,6 +344,159 @@ MeshData BuildMesh(const Chunk& chunk, const NeighborData& neighbors,
                         float tex_idx = FaceTexIndex(block_type.faces, face);
                         EmitFace(mesh, x, y, z, face, tex_idx);
                     }
+                }
+            }
+        }
+    }
+
+    return mesh;
+}
+
+MeshData BuildGreedyMesh(const Chunk& chunk, const NeighborData& neighbors,
+                         const BlockRegistry& registry) {
+    MeshData mesh;
+    mesh.vertices.reserve(4096);
+    mesh.indices.reserve(6144);
+
+    // Mask entry: block id for the face to emit (0 = no face).
+    // We also track AO per mask cell so different AO values break merges.
+    struct MaskEntry {
+        BlockId block_id = 0;
+        float tex_index = -1.0f;
+        float ao = 1.0f;
+
+        bool operator==(const MaskEntry& other) const {
+            return block_id == other.block_id &&
+                   tex_index == other.tex_index &&
+                   ao == other.ao;
+        }
+        bool Empty() const { return block_id == 0; }
+    };
+
+    static constexpr Face kAllFaces[] = {
+        Face::kPosX, Face::kNegX,
+        Face::kPosY, Face::kNegY,
+        Face::kPosZ, Face::kNegZ,
+    };
+
+    // For each face direction, sweep slices perpendicular to that axis.
+    for (Face face : kAllFaces) {
+        // Determine axis dimensions.
+        // axis_size = extent along the face normal direction.
+        // u_size, v_size = extent of the 2D slice.
+        int axis_size, u_size, v_size;
+
+        switch (face) {
+            case Face::kPosX:
+            case Face::kNegX:
+                axis_size = kChunkSizeX;
+                u_size = kChunkSizeZ;
+                v_size = kChunkSizeY;
+                break;
+            case Face::kPosY:
+            case Face::kNegY:
+                axis_size = kChunkSizeY;
+                u_size = kChunkSizeX;
+                v_size = kChunkSizeZ;
+                break;
+            case Face::kPosZ:
+            case Face::kNegZ:
+                axis_size = kChunkSizeZ;
+                u_size = kChunkSizeX;
+                v_size = kChunkSizeY;
+                break;
+        }
+
+        // Allocate mask for a single slice.
+        std::vector<MaskEntry> mask(u_size * v_size);
+
+        for (int slice = 0; slice < axis_size; ++slice) {
+            // Build the mask: for each (u, v) position in the slice,
+            // determine if a face should be emitted.
+            for (int v = 0; v < v_size; ++v) {
+                for (int u = 0; u < u_size; ++u) {
+                    // Map (slice, u, v) back to (x, y, z).
+                    int x, y, z;
+                    switch (face) {
+                        case Face::kPosX:
+                        case Face::kNegX:
+                            x = slice; z = u; y = v;
+                            break;
+                        case Face::kPosY:
+                        case Face::kNegY:
+                            y = slice; x = u; z = v;
+                            break;
+                        case Face::kPosZ:
+                        case Face::kNegZ:
+                            z = slice; x = u; y = v;
+                            break;
+                    }
+
+                    MaskEntry& entry = mask[v * u_size + u];
+                    entry = MaskEntry{};  // Reset.
+
+                    BlockId block_id = chunk.GetBlock(x, y, z);
+                    if (block_id == BlockRegistry::kAir) {
+                        continue;
+                    }
+
+                    BlockId neighbor_id = GetNeighborBlock(
+                        chunk, neighbors, x, y, z, face);
+
+                    if (ShouldEmitFace(block_id, neighbor_id, registry)) {
+                        const BlockType& block_type = registry.GetBlock(block_id);
+                        float tex_idx = FaceTexIndex(block_type.faces, face);
+                        entry.block_id = block_id;
+                        entry.tex_index = tex_idx;
+                        entry.ao = 1.0f;  // Stubbed; proper AO in M24.
+                    }
+                }
+            }
+
+            // Greedy merge: scan the mask and find maximal rectangles.
+            for (int v = 0; v < v_size; ++v) {
+                for (int u = 0; u < u_size; ) {
+                    MaskEntry& current = mask[v * u_size + u];
+                    if (current.Empty()) {
+                        ++u;
+                        continue;
+                    }
+
+                    // Find the width: extend u while the mask matches.
+                    int width = 1;
+                    while (u + width < u_size &&
+                           mask[v * u_size + u + width] == current) {
+                        ++width;
+                    }
+
+                    // Find the height: extend v while all rows match.
+                    int height = 1;
+                    bool done = false;
+                    while (v + height < v_size && !done) {
+                        for (int du = 0; du < width; ++du) {
+                            if (!(mask[(v + height) * u_size + u + du] == current)) {
+                                done = true;
+                                break;
+                            }
+                        }
+                        if (!done) {
+                            ++height;
+                        }
+                    }
+
+                    // Emit the merged quad.
+                    EmitGreedyQuad(mesh, face, slice,
+                                   u, v, width, height,
+                                   current.tex_index, current.ao);
+
+                    // Clear the mask for the merged region.
+                    for (int dv = 0; dv < height; ++dv) {
+                        for (int du = 0; du < width; ++du) {
+                            mask[(v + dv) * u_size + u + du] = MaskEntry{};
+                        }
+                    }
+
+                    u += width;
                 }
             }
         }

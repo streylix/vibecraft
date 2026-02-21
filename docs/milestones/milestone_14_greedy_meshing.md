@@ -1,5 +1,7 @@
 # Milestone 14 — Greedy Meshing Upgrade
 
+> **Status: COMPLETE** — All 8 tests passing. Greedy quad merging, 96x vertex reduction on uniform layers, tiled UVs, AO-aware merging.
+
 ## Description
 Upgrade the chunk mesher from naive per-face meshing to greedy meshing. Greedy meshing merges adjacent coplanar faces of the same block type into larger quads, dramatically reducing vertex count.
 

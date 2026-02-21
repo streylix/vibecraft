@@ -17,7 +17,7 @@ struct NeighborData {
     const Chunk* neg_z = nullptr;  // -Z neighbor (z = 0 border)
 };
 
-/// Build a renderable mesh from a chunk's block data.
+/// Build a renderable mesh from a chunk's block data (naive per-face).
 ///
 /// For each non-air block, checks all 6 face directions. A face is emitted
 /// only when the adjacent block does not occlude it:
@@ -42,6 +42,22 @@ struct NeighborData {
 /// @return MeshData containing vertices and indices.
 MeshData BuildMesh(const Chunk& chunk, const NeighborData& neighbors,
                    const BlockRegistry& registry);
+
+/// Build a renderable mesh using greedy meshing.
+///
+/// Same face-culling rules as BuildMesh, but merges coplanar adjacent faces
+/// of the same block type (and same AO value) into larger quads, dramatically
+/// reducing vertex count.
+///
+/// UV coordinates tile across merged faces: a quad spanning W blocks wide
+/// and H blocks tall will have U range [0, W] and V range [0, H].
+///
+/// @param chunk     The chunk to mesh.
+/// @param neighbors Neighbor chunk data for boundary face culling.
+/// @param registry  Block type registry for property lookups.
+/// @return MeshData containing vertices and indices.
+MeshData BuildGreedyMesh(const Chunk& chunk, const NeighborData& neighbors,
+                         const BlockRegistry& registry);
 
 }  // namespace vibecraft
 
