@@ -82,6 +82,7 @@ public:
     static constexpr BlockId kTorch = 18;
     static constexpr BlockId kSnow = 19;
     static constexpr BlockId kCactus = 20;
+    static constexpr BlockId kObsidian = 21;
 
 private:
     /// Register a block type at the given id.

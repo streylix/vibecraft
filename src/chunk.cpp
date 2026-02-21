@@ -8,6 +8,7 @@ Chunk::Chunk(int chunk_x, int chunk_z)
     : dirty_(true), chunk_x_(chunk_x), chunk_z_(chunk_z) {
     blocks_.fill(BlockRegistry::kAir);
     light_.fill(0);
+    fluid_levels_.fill(0);
     heightmap_.fill(-1);
 }
 
@@ -116,6 +117,20 @@ void Chunk::SetRawLight(int x, int y, int z, uint8_t value) {
         return;
     }
     light_[Index(x, y, z)] = value;
+}
+
+uint8_t Chunk::GetFluidLevel(int x, int y, int z) const {
+    if (!InBounds(x, y, z)) {
+        return 0;
+    }
+    return fluid_levels_[Index(x, y, z)];
+}
+
+void Chunk::SetFluidLevel(int x, int y, int z, uint8_t level) {
+    if (!InBounds(x, y, z)) {
+        return;
+    }
+    fluid_levels_[Index(x, y, z)] = level;
 }
 
 bool Chunk::InBounds(int x, int y, int z) {

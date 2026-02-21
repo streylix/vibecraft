@@ -183,6 +183,12 @@ void BlockRegistry::RegisterDefaults() {
         "Cactus", true, true, false, 0.4f, 0,
         BlockFaces::TopBottomSide(21, 21, 22)
     });
+
+    // 21: Obsidian — very hard, created by water+lava interactions
+    Register(kObsidian, BlockType{
+        "Obsidian", true, false, false, 50.0f, 0,
+        BlockFaces::All(23)
+    });
 }
 
 }  // namespace vibecraft

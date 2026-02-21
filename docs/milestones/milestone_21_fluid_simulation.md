@@ -1,5 +1,7 @@
 # Milestone 21 — Fluid Simulation
 
+> **Status: COMPLETE** — All 11 tests passing. Cellular automata water (0-7) and lava (0-3), gravity+horizontal flow, infinite source rule, water/lava interactions.
+
 ## Description
 Implement cellular automata fluid simulation for water and lava. Water flows down and horizontally with 8 levels (0-7). Lava flows slower with 4 levels (0-3). Water + lava interactions produce cobblestone or obsidian.
 

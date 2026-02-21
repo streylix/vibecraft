@@ -43,6 +43,31 @@ void World::SetBlock(int bx, int by, int bz, BlockId id) {
     PropagateDirty(cx, cz, lx, lz);
 }
 
+uint8_t World::GetFluidLevel(int bx, int by, int bz) const {
+    int cx = WorldToChunkCoord(bx);
+    int cz = WorldToChunkCoord(bz);
+
+    const Chunk* chunk = GetChunk(cx, cz);
+    if (chunk == nullptr) {
+        return 0;
+    }
+
+    int lx = WorldToLocalCoord(bx);
+    int lz = WorldToLocalCoord(bz);
+    return chunk->GetFluidLevel(lx, by, lz);
+}
+
+void World::SetFluidLevel(int bx, int by, int bz, uint8_t level) {
+    int cx = WorldToChunkCoord(bx);
+    int cz = WorldToChunkCoord(bz);
+
+    Chunk& chunk = GetOrCreateChunk(cx, cz);
+
+    int lx = WorldToLocalCoord(bx);
+    int lz = WorldToLocalCoord(bz);
+    chunk.SetFluidLevel(lx, by, lz, level);
+}
+
 void World::LoadChunk(int cx, int cz) {
     ChunkCoord coord{cx, cz};
     if (chunks_.find(coord) == chunks_.end()) {

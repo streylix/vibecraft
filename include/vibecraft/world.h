@@ -68,6 +68,14 @@ public:
     /// a chunk boundary (local x=0, x=15, z=0, or z=15).
     void SetBlock(int bx, int by, int bz, BlockId id);
 
+    /// Get the fluid level at world coordinates (bx, by, bz).
+    /// Returns 0 if the chunk is not loaded or coordinates are invalid.
+    uint8_t GetFluidLevel(int bx, int by, int bz) const;
+
+    /// Set the fluid level at world coordinates (bx, by, bz).
+    /// Creates the chunk if it does not exist (lazy creation).
+    void SetFluidLevel(int bx, int by, int bz, uint8_t level);
+
     /// Load (create) an empty chunk at the given chunk coordinates.
     /// If the chunk already exists, this is a no-op.
     void LoadChunk(int cx, int cz);

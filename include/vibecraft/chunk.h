@@ -84,6 +84,18 @@ public:
     /// Set the raw light byte at local coordinates.
     void SetRawLight(int x, int y, int z, uint8_t value);
 
+    // --- Fluid level storage ---
+    // Each block stores a fluid level (0 = empty/minimum, 7 = full water source,
+    // 3 = full lava source). Only meaningful when the block is Water or Lava.
+
+    /// Get the fluid level at local coordinates (x, y, z).
+    /// Returns 0 if coordinates are out of bounds.
+    uint8_t GetFluidLevel(int x, int y, int z) const;
+
+    /// Set the fluid level at local coordinates (x, y, z).
+    /// Out-of-bounds writes are silently ignored.
+    void SetFluidLevel(int x, int y, int z, uint8_t level);
+
 private:
     /// Check whether local coordinates are within bounds.
     static bool InBounds(int x, int y, int z);
@@ -99,7 +111,8 @@ private:
     void RecalcHeightmap(int x, int z);
 
     std::array<BlockId, kChunkVolume> blocks_;
-    std::array<uint8_t, kChunkVolume> light_;  // upper 4 bits = sun, lower 4 = block
+    std::array<uint8_t, kChunkVolume> light_;         // upper 4 bits = sun, lower 4 = block
+    std::array<uint8_t, kChunkVolume> fluid_levels_;  // fluid level per block
     std::array<int16_t, kChunkColumns> heightmap_;
     bool dirty_;
     int chunk_x_;
