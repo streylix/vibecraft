@@ -16,6 +16,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "vibecraft/block.h"
+#include "vibecraft/fluid.h"
+#include "vibecraft/math_utils.h"
 #include "vibecraft/block_interaction.h"
 #include "vibecraft/camera.h"
 #include "vibecraft/chunk.h"
@@ -153,6 +155,7 @@ int main() {
 
     // World & terrain.
     vibecraft::World world;
+    vibecraft::FluidSimulator fluid_sim(&world);
     vibecraft::TerrainGenerator terrain_gen(kWorldSeed);
 
     // Player — spawn at world center, find surface height.
@@ -185,7 +188,7 @@ int main() {
     inventory.SetSlot(5, vibecraft::BlockRegistry::kGlass, 64);
     inventory.SetSlot(6, vibecraft::BlockRegistry::kOakLog, 64);
     inventory.SetSlot(7, vibecraft::BlockRegistry::kGrass, 64);
-    inventory.SetSlot(8, vibecraft::BlockRegistry::kOakLeaves, 64);
+    inventory.SetSlot(8, vibecraft::BlockRegistry::kWater, 64);
 
     // --- HUD: crosshair setup ---
     vibecraft::Shader hud_shader;
@@ -397,6 +400,7 @@ int main() {
 
             player.Update(block_query, registry);
             sky.Tick();
+            fluid_sim.Tick();
         }
 
         // Sync camera to player eye position.
@@ -424,17 +428,54 @@ int main() {
                 camera.GetPosition(), camera.GetForward(),
                 vibecraft::kMaxRaycastDistance, block_query, registry);
 
-            if (g_mouse_left_held && ray_hit.hit) {
-                vibecraft::BlockId hit_block = world.GetBlock(
-                    ray_hit.block_position.x,
-                    ray_hit.block_position.y,
-                    ray_hit.block_position.z);
-                bool broken = block_interaction.UpdateBreaking(
-                    ray_hit.block_position, hit_block, registry,
-                    elapsed, block_set);
-                if (broken) {
-                    // Add the broken block to inventory.
-                    inventory.AddItem(hit_block, 1);
+            if (g_mouse_left_held) {
+                // First try to hit a solid block.
+                if (ray_hit.hit) {
+                    vibecraft::BlockId hit_block = world.GetBlock(
+                        ray_hit.block_position.x,
+                        ray_hit.block_position.y,
+                        ray_hit.block_position.z);
+                    bool broken = block_interaction.UpdateBreaking(
+                        ray_hit.block_position, hit_block, registry,
+                        elapsed, block_set);
+                    if (broken) {
+                        inventory.AddItem(hit_block, 1);
+                    }
+                } else {
+                    // No solid block hit — check for fluid blocks.
+                    // Use a query that treats liquids as hittable.
+                    auto fluid_query = [&](int x, int y, int z) -> vibecraft::BlockId {
+                        return world.GetBlock(x, y, z);
+                    };
+                    // Create a temporary registry copy where water/lava are solid
+                    // for raycast purposes. Simpler: just manually DDA check.
+                    // Actually, just walk along the ray checking for fluids.
+                    vibecraft::RaycastResult fluid_hit;
+                    {
+                        glm::vec3 pos = camera.GetPosition();
+                        glm::vec3 dir = glm::normalize(camera.GetForward());
+                        for (float t = 0.0f; t < vibecraft::kMaxRaycastDistance; t += 0.1f) {
+                            glm::vec3 p = pos + dir * t;
+                            int bx = vibecraft::IntFloor(p.x);
+                            int by = vibecraft::IntFloor(p.y);
+                            int bz = vibecraft::IntFloor(p.z);
+                            vibecraft::BlockId b = world.GetBlock(bx, by, bz);
+                            if (b == vibecraft::BlockRegistry::kWater ||
+                                b == vibecraft::BlockRegistry::kLava) {
+                                fluid_hit.hit = true;
+                                fluid_hit.block_position = glm::ivec3(bx, by, bz);
+                                break;
+                            }
+                        }
+                    }
+                    if (fluid_hit.hit) {
+                        fluid_sim.RemoveFluid(
+                            fluid_hit.block_position.x,
+                            fluid_hit.block_position.y,
+                            fluid_hit.block_position.z);
+                    } else {
+                        block_interaction.ResetBreaking();
+                    }
                 }
             } else {
                 block_interaction.ResetBreaking();
@@ -443,20 +484,46 @@ int main() {
             if (g_mouse_right_pressed && ray_hit.hit) {
                 vibecraft::ItemSlot held = inventory.GetHeldItem();
                 if (!held.IsEmpty()) {
-                    bool placed = vibecraft::BlockInteraction::PlaceBlock(
-                        ray_hit.block_position, ray_hit.face_normal,
-                        held.block_id, player.GetAABB(),
-                        block_query, block_set, registry);
-                    if (placed) {
-                        // Decrement the count in the selected hotbar slot.
-                        int sel = inventory.GetSelectedSlot();
-                        vibecraft::ItemSlot slot = inventory.GetSlot(sel);
-                        if (slot.count > 1) {
-                            inventory.SetSlot(sel, slot.block_id,
-                                              slot.count - 1);
-                        } else {
-                            inventory.SetSlot(sel,
-                                              vibecraft::BlockRegistry::kAir, 0);
+                    // Water/lava placement uses the fluid simulator.
+                    if (held.block_id == vibecraft::BlockRegistry::kWater ||
+                        held.block_id == vibecraft::BlockRegistry::kLava) {
+                        glm::ivec3 place_pos =
+                            ray_hit.block_position + ray_hit.face_normal;
+                        vibecraft::BlockId existing =
+                            world.GetBlock(place_pos.x, place_pos.y, place_pos.z);
+                        if (existing == vibecraft::BlockRegistry::kAir) {
+                            if (held.block_id == vibecraft::BlockRegistry::kWater) {
+                                fluid_sim.PlaceWaterSource(
+                                    place_pos.x, place_pos.y, place_pos.z);
+                            } else {
+                                fluid_sim.PlaceLavaSource(
+                                    place_pos.x, place_pos.y, place_pos.z);
+                            }
+                            int sel = inventory.GetSelectedSlot();
+                            vibecraft::ItemSlot slot = inventory.GetSlot(sel);
+                            if (slot.count > 1) {
+                                inventory.SetSlot(sel, slot.block_id,
+                                                  slot.count - 1);
+                            } else {
+                                inventory.SetSlot(sel,
+                                                  vibecraft::BlockRegistry::kAir, 0);
+                            }
+                        }
+                    } else {
+                        bool placed = vibecraft::BlockInteraction::PlaceBlock(
+                            ray_hit.block_position, ray_hit.face_normal,
+                            held.block_id, player.GetAABB(),
+                            block_query, block_set, registry);
+                        if (placed) {
+                            int sel = inventory.GetSelectedSlot();
+                            vibecraft::ItemSlot slot = inventory.GetSlot(sel);
+                            if (slot.count > 1) {
+                                inventory.SetSlot(sel, slot.block_id,
+                                                  slot.count - 1);
+                            } else {
+                                inventory.SetSlot(sel,
+                                                  vibecraft::BlockRegistry::kAir, 0);
+                            }
                         }
                     }
                 }
@@ -480,13 +547,20 @@ int main() {
             }
         }
 
-        // Remesh dirty chunks.
-        for (int cx = player_cx - kRenderDistance; cx <= player_cx + kRenderDistance; ++cx) {
-            for (int cz = player_cz - kRenderDistance; cz <= player_cz + kRenderDistance; ++cz) {
-                vibecraft::Chunk* chunk = world.GetChunk(cx, cz);
-                if (chunk && chunk->IsDirty()) {
-                    mesh_chunk(cx, cz);
-                    chunk->ClearDirty();
+        // Remesh dirty chunks (cap per frame to avoid lag from fluid flow).
+        {
+            int remeshed = 0;
+            constexpr int kMaxRemeshPerFrame = 4;
+            for (int cx = player_cx - kRenderDistance;
+                 cx <= player_cx + kRenderDistance && remeshed < kMaxRemeshPerFrame; ++cx) {
+                for (int cz = player_cz - kRenderDistance;
+                     cz <= player_cz + kRenderDistance && remeshed < kMaxRemeshPerFrame; ++cz) {
+                    vibecraft::Chunk* chunk = world.GetChunk(cx, cz);
+                    if (chunk && chunk->IsDirty()) {
+                        mesh_chunk(cx, cz);
+                        chunk->ClearDirty();
+                        ++remeshed;
+                    }
                 }
             }
         }
