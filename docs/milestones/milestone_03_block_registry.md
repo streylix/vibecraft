@@ -1,5 +1,7 @@
 # Milestone 3 — Block Type Registry
 
+> **Status: COMPLETE** — All 15 tests passing. 21 block types registered.
+
 ## Description
 Define and register all block types with their properties. The registry maps `BlockId` (uint8_t) to a `BlockType` struct containing rendering and physics metadata.
 
