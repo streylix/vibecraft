@@ -1,5 +1,7 @@
 # Milestone 2 — Math Utilities & AABB Primitives
 
+> **Status: COMPLETE** — All 23 tests passing (12 MathUtils + 11 AABB)
+
 ## Description
 Implement core math utilities and axis-aligned bounding box (AABB) primitives used throughout the engine for collision detection, physics, and spatial queries.
 
