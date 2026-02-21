@@ -1,5 +1,7 @@
 # Milestone 18 — Inventory, Hotbar & HUD
 
+> **Status: COMPLETE** — All 14 tests passing (11 inventory + 3 bitmap font). 36-slot inventory, stack to 64, hotbar selection, 8x8 bitmap font.
+
 ## Description
 Implement the inventory system (36 slots), hotbar (bottom 9 slots), and basic HUD rendering with item counts and a bitmap font.
 
