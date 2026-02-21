@@ -1,5 +1,7 @@
 # Milestone 7 — Player Physics
 
+> **Status: COMPLETE** — All 11 tests passing. Gravity, jumping, swept AABB collision, ground detection, water passthrough.
+
 ## Description
 Implement player physics including gravity, jumping, ground detection, and collision response against the voxel world. The player is represented as an AABB that moves through the block grid.
 
