@@ -1,5 +1,7 @@
 # Milestone 10 — Texture Atlas & Block Shaders
 
+> **Status: COMPLETE** — 8 tests passing + 1 GPU skip. Atlas packing, UV computation, 23 placeholder textures, chunk renderer, stb_image vendored.
+
 ## Description
 Load block textures into an OpenGL texture atlas and integrate with the block shader for textured rendering of chunk meshes.
 
