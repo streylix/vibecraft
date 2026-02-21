@@ -42,5 +42,8 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
         vibecraft_lib
         GTest::gtest_main
     )
+    target_compile_definitions(${TEST_NAME} PRIVATE
+        VIBECRAFT_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
+    )
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endforeach()

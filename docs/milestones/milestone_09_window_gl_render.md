@@ -1,5 +1,7 @@
 # Milestone 9 — Window, GL Context & Render Pipeline
 
+> **Status: COMPLETE** — All 11 tests passing (8 camera + 3 shader). FPS camera, shader loading, GLFW window, GL renderer, GLSL shaders.
+
 ## Description
 Create the game window using GLFW, initialize an OpenGL 3.3 Core context, and set up the basic render pipeline including camera, view/projection matrices, and shader compilation.
 
