@@ -1,5 +1,7 @@
 # Milestone 23 — Particle System & Weather
 
+> **Status: COMPLETE** — All 11 tests passing (6 particles + 5 weather). Pool-based particles with gravity/lifetime, weather state machine with biome overrides.
+
 ## Description
 Implement a particle system for visual effects (block breaking, torch sparks) and a weather system (clear, rain, snow) that varies by biome.
 
