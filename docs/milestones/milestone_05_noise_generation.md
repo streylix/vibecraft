@@ -1,5 +1,7 @@
 # Milestone 5 — Noise Generation
 
+> **Status: COMPLETE** — All 10 tests passing. 2D/3D Perlin noise with octave layering, deterministic from seed.
+
 ## Description
 Implement Perlin/Simplex noise for procedural terrain generation. Noise is the foundation of world generation — terrain height, biomes, caves, and ore distribution all depend on coherent noise functions.
 
