@@ -1,5 +1,7 @@
 # Milestone 11 — Terrain Generation (Basic)
 
+> **Status: COMPLETE** — All 10 tests passing. Perlin noise height, bedrock/stone/dirt/grass layers, height range [40,120], seamless borders.
+
 ## Description
 Generate basic Minecraft-like terrain using noise functions. Create rolling hills with grass/dirt/stone layers and bedrock floor.
 
