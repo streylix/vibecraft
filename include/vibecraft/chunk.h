@@ -57,6 +57,33 @@ public:
     /// Get the chunk Z coordinate in chunk space.
     int GetChunkZ() const;
 
+    // --- Light storage ---
+    // Each block stores 1 byte: upper 4 bits = sunlight (0-15),
+    // lower 4 bits = block light (0-15).
+
+    /// Get the sunlight level at local coordinates (x, y, z).
+    /// Returns 0 if coordinates are out of bounds.
+    int GetSunLight(int x, int y, int z) const;
+
+    /// Set the sunlight level at local coordinates (x, y, z).
+    /// Out-of-bounds writes are silently ignored.
+    void SetSunLight(int x, int y, int z, int level);
+
+    /// Get the block light level at local coordinates (x, y, z).
+    /// Returns 0 if coordinates are out of bounds.
+    int GetBlockLight(int x, int y, int z) const;
+
+    /// Set the block light level at local coordinates (x, y, z).
+    /// Out-of-bounds writes are silently ignored.
+    void SetBlockLight(int x, int y, int z, int level);
+
+    /// Get the raw light byte at local coordinates.
+    /// Returns 0 if coordinates are out of bounds.
+    uint8_t GetRawLight(int x, int y, int z) const;
+
+    /// Set the raw light byte at local coordinates.
+    void SetRawLight(int x, int y, int z, uint8_t value);
+
 private:
     /// Check whether local coordinates are within bounds.
     static bool InBounds(int x, int y, int z);
@@ -72,6 +99,7 @@ private:
     void RecalcHeightmap(int x, int z);
 
     std::array<BlockId, kChunkVolume> blocks_;
+    std::array<uint8_t, kChunkVolume> light_;  // upper 4 bits = sun, lower 4 = block
     std::array<int16_t, kChunkColumns> heightmap_;
     bool dirty_;
     int chunk_x_;

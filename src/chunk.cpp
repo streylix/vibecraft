@@ -7,6 +7,7 @@ namespace vibecraft {
 Chunk::Chunk(int chunk_x, int chunk_z)
     : dirty_(true), chunk_x_(chunk_x), chunk_z_(chunk_z) {
     blocks_.fill(BlockRegistry::kAir);
+    light_.fill(0);
     heightmap_.fill(-1);
 }
 
@@ -71,6 +72,50 @@ int Chunk::GetChunkX() const {
 
 int Chunk::GetChunkZ() const {
     return chunk_z_;
+}
+
+int Chunk::GetSunLight(int x, int y, int z) const {
+    if (!InBounds(x, y, z)) {
+        return 0;
+    }
+    return (light_[Index(x, y, z)] >> 4) & 0x0F;
+}
+
+void Chunk::SetSunLight(int x, int y, int z, int level) {
+    if (!InBounds(x, y, z)) {
+        return;
+    }
+    int idx = Index(x, y, z);
+    light_[idx] = static_cast<uint8_t>((light_[idx] & 0x0F) | ((level & 0x0F) << 4));
+}
+
+int Chunk::GetBlockLight(int x, int y, int z) const {
+    if (!InBounds(x, y, z)) {
+        return 0;
+    }
+    return light_[Index(x, y, z)] & 0x0F;
+}
+
+void Chunk::SetBlockLight(int x, int y, int z, int level) {
+    if (!InBounds(x, y, z)) {
+        return;
+    }
+    int idx = Index(x, y, z);
+    light_[idx] = static_cast<uint8_t>((light_[idx] & 0xF0) | (level & 0x0F));
+}
+
+uint8_t Chunk::GetRawLight(int x, int y, int z) const {
+    if (!InBounds(x, y, z)) {
+        return 0;
+    }
+    return light_[Index(x, y, z)];
+}
+
+void Chunk::SetRawLight(int x, int y, int z, uint8_t value) {
+    if (!InBounds(x, y, z)) {
+        return;
+    }
+    light_[Index(x, y, z)] = value;
 }
 
 bool Chunk::InBounds(int x, int y, int z) {

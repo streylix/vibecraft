@@ -1,5 +1,7 @@
 # Milestone 15 — Lighting System (Sun + Block)
 
+> **Status: COMPLETE** — All 10 tests passing. BFS flood-fill for sun+block light, 4-bit storage, cross-chunk propagation, glass transparency.
+
 ## Description
 Implement a dual lighting system with sunlight (propagates from sky downward) and block light (emitted by torches, lava, etc.). Light values are stored per-block and propagated using BFS flood-fill.
 
