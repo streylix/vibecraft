@@ -5,9 +5,17 @@
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
+#ifdef __APPLE__
+#define GL_SILENCE_DEPRECATION
+#include <OpenGL/gl3.h>
+#endif
+
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "vibecraft/block.h"
+#include "vibecraft/block_interaction.h"
 #include "vibecraft/camera.h"
 #include "vibecraft/chunk.h"
 #include "vibecraft/chunk_mesher.h"
@@ -15,7 +23,9 @@
 #include "vibecraft/debug_overlay.h"
 #include "vibecraft/game_loop.h"
 #include "vibecraft/input.h"
+#include "vibecraft/inventory.h"
 #include "vibecraft/player.h"
+#include "vibecraft/raycast.h"
 #include "vibecraft/renderer.h"
 #include "vibecraft/shader.h"
 #include "vibecraft/sky.h"
@@ -43,6 +53,10 @@ static constexpr uint32_t kWorldSeed = 42;
 static vibecraft::Input* g_input = nullptr;
 static vibecraft::Window* g_window = nullptr;
 
+// Mouse button state (tracked via GLFW callback).
+static bool g_mouse_left_held = false;
+static bool g_mouse_right_pressed = false;  // edge-triggered: true for one frame
+
 static void KeyCallback(GLFWwindow* /*window*/, int key, int /*scancode*/,
                          int action, int /*mods*/) {
     if (g_input && key >= 0 && key < vibecraft::Input::kMaxKeys) {
@@ -62,7 +76,17 @@ static void ScrollCallback(GLFWwindow* /*window*/, double xoff, double yoff) {
     }
 }
 
-// No direct GL include in main — GL calls are done through Renderer/ChunkRenderer/Shader.
+static void MouseButtonCallback(GLFWwindow* /*window*/, int button, int action,
+                                  int /*mods*/) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        g_mouse_left_held = (action != GLFW_RELEASE);
+    }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+        g_mouse_right_pressed = true;
+    }
+}
+
+// GL calls needed for crosshair rendering are included via OpenGL/gl3.h above.
 
 // Framebuffer resize handled by Renderer.SetViewport each frame.
 
@@ -94,6 +118,7 @@ int main() {
     glfwSetKeyCallback(window.GetHandle(), KeyCallback);
     glfwSetCursorPosCallback(window.GetHandle(), CursorPosCallback);
     glfwSetScrollCallback(window.GetHandle(), ScrollCallback);
+    glfwSetMouseButtonCallback(window.GetHandle(), MouseButtonCallback);
     // Framebuffer resize is handled by renderer.SetViewport each frame.
 
     vibecraft::Renderer renderer;
@@ -144,6 +169,46 @@ int main() {
 
     // Chunk renderer.
     vibecraft::ChunkRenderer chunk_renderer;
+
+    // Block interaction and inventory.
+    vibecraft::BlockInteraction block_interaction;
+    vibecraft::Inventory inventory;
+    // Seed the hotbar with some common block types for placing.
+    inventory.SetSlot(0, vibecraft::BlockRegistry::kStone, 64);
+    inventory.SetSlot(1, vibecraft::BlockRegistry::kDirt, 64);
+    inventory.SetSlot(2, vibecraft::BlockRegistry::kCobblestone, 64);
+    inventory.SetSlot(3, vibecraft::BlockRegistry::kOakPlanks, 64);
+    inventory.SetSlot(4, vibecraft::BlockRegistry::kSand, 64);
+    inventory.SetSlot(5, vibecraft::BlockRegistry::kGlass, 64);
+    inventory.SetSlot(6, vibecraft::BlockRegistry::kOakLog, 64);
+    inventory.SetSlot(7, vibecraft::BlockRegistry::kGrass, 64);
+    inventory.SetSlot(8, vibecraft::BlockRegistry::kOakLeaves, 64);
+
+    // --- HUD: crosshair setup ---
+    vibecraft::Shader hud_shader;
+    if (!hud_shader.CompileFromFiles("assets/shaders/hud.vert",
+                                      "assets/shaders/hud.frag")) {
+        std::cerr << "HUD shader error: " << hud_shader.GetErrorLog() << "\n";
+        return 1;
+    }
+
+    // Crosshair geometry: two lines forming a "+" at the origin.
+    // We'll transform them to screen center via the projection uniform.
+    unsigned int crosshair_vao = 0, crosshair_vbo = 0;
+    {
+        // We'll update the vertex data each frame based on screen size.
+        glGenVertexArrays(1, &crosshair_vao);
+        glGenBuffers(1, &crosshair_vbo);
+        glBindVertexArray(crosshair_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, crosshair_vbo);
+        // Reserve space for 4 vertices (2 lines x 2 endpoints, each vec2).
+        glBufferData(GL_ARRAY_BUFFER, 4 * 2 * sizeof(float), nullptr,
+                     GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float),
+                              nullptr);
+        glBindVertexArray(0);
+    }
 
     // Game loop timing.
     vibecraft::GameLoop game_loop;
@@ -290,6 +355,67 @@ int main() {
         camera.SetPosition(player.GetEyePosition());
         camera.SetAspectRatio(window.GetAspectRatio());
 
+        // --- Hotbar selection via scroll wheel ---
+        {
+            double scroll_dx, scroll_dy;
+            input.GetScrollDelta(scroll_dx, scroll_dy);
+            if (scroll_dy > 0.0) {
+                inventory.PrevHotbarSlot();
+            } else if (scroll_dy < 0.0) {
+                inventory.NextHotbarSlot();
+            }
+        }
+
+        // --- Block interaction: raycast + breaking/placing ---
+        {
+            auto block_set = [&](int x, int y, int z, vibecraft::BlockId id) {
+                world.SetBlock(x, y, z, id);
+            };
+
+            vibecraft::RaycastResult ray_hit = vibecraft::CastRay(
+                camera.GetPosition(), camera.GetForward(),
+                vibecraft::kMaxRaycastDistance, block_query, registry);
+
+            if (g_mouse_left_held && ray_hit.hit) {
+                vibecraft::BlockId hit_block = world.GetBlock(
+                    ray_hit.block_position.x,
+                    ray_hit.block_position.y,
+                    ray_hit.block_position.z);
+                bool broken = block_interaction.UpdateBreaking(
+                    ray_hit.block_position, hit_block, registry,
+                    elapsed, block_set);
+                if (broken) {
+                    // Add the broken block to inventory.
+                    inventory.AddItem(hit_block, 1);
+                }
+            } else {
+                block_interaction.ResetBreaking();
+            }
+
+            if (g_mouse_right_pressed && ray_hit.hit) {
+                vibecraft::ItemSlot held = inventory.GetHeldItem();
+                if (!held.IsEmpty()) {
+                    bool placed = vibecraft::BlockInteraction::PlaceBlock(
+                        ray_hit.block_position, ray_hit.face_normal,
+                        held.block_id, player.GetAABB(),
+                        block_query, block_set, registry);
+                    if (placed) {
+                        // Decrement the count in the selected hotbar slot.
+                        int sel = inventory.GetSelectedSlot();
+                        vibecraft::ItemSlot slot = inventory.GetSlot(sel);
+                        if (slot.count > 1) {
+                            inventory.SetSlot(sel, slot.block_id,
+                                              slot.count - 1);
+                        } else {
+                            inventory.SetSlot(sel,
+                                              vibecraft::BlockRegistry::kAir, 0);
+                        }
+                    }
+                }
+            }
+            g_mouse_right_pressed = false;  // Consume the edge-trigger.
+        }
+
         // --- Chunk loading/unloading around player ---
         int player_cx = vibecraft::World::WorldToChunkCoord(
             static_cast<int>(std::floor(player.GetPosition().x)));
@@ -338,6 +464,53 @@ int main() {
                                 camera.GetViewMatrix(),
                                 camera.GetProjectionMatrix());
 
+        // --- Draw crosshair ---
+        {
+            float sw = static_cast<float>(window.GetWidth());
+            float sh = static_cast<float>(window.GetHeight());
+            float cx = sw / 2.0f;
+            float cy = sh / 2.0f;
+            float half_size = 10.0f;
+
+            float crosshair_verts[] = {
+                cx - half_size, cy,   // horizontal line left
+                cx + half_size, cy,   // horizontal line right
+                cx, cy - half_size,   // vertical line bottom
+                cx, cy + half_size,   // vertical line top
+            };
+
+            glDisable(GL_DEPTH_TEST);
+            glLineWidth(2.0f);
+
+            hud_shader.Use();
+            glm::mat4 ortho = glm::ortho(0.0f, sw, 0.0f, sh);
+            hud_shader.SetMat4("u_projection", ortho);
+            hud_shader.SetVec3("u_color", glm::vec3(1.0f, 1.0f, 1.0f));
+            // Set the vec4 u_color uniform manually via the shader's SetFloat
+            // approach — but Shader only has SetVec3. We need the alpha too.
+            // Use the vec3 overload and set alpha separately... Actually the
+            // fragment shader uses vec4 u_color, but Shader has no SetVec4.
+            // We can use SetVec3 for the color and rely on the uniform
+            // default or use a workaround. Let's just treat the alpha as 1.0
+            // by setting u_color as a vec4 via the program directly.
+            {
+                int loc = glGetUniformLocation(hud_shader.GetProgramId(),
+                                               "u_color");
+                if (loc >= 0) {
+                    glUniform4f(loc, 1.0f, 1.0f, 1.0f, 1.0f);
+                }
+            }
+
+            glBindVertexArray(crosshair_vao);
+            glBindBuffer(GL_ARRAY_BUFFER, crosshair_vbo);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(crosshair_verts),
+                            crosshair_verts);
+            glDrawArrays(GL_LINES, 0, 4);
+            glBindVertexArray(0);
+
+            glEnable(GL_DEPTH_TEST);
+        }
+
         renderer.EndFrame();
 
         // Debug overlay (print to console every second for now).
@@ -363,6 +536,8 @@ int main() {
     // Cleanup.
     std::cout << "\nShutting down...\n";
     chunk_renderer.Clear();
+    if (crosshair_vbo) glDeleteBuffers(1, &crosshair_vbo);
+    if (crosshair_vao) glDeleteVertexArrays(1, &crosshair_vao);
 
     return 0;
 }

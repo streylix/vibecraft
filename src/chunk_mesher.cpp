@@ -109,13 +109,14 @@ void EmitFace(MeshData& mesh, int bx, int by, int bz,
     mesh.vertices.push_back({v2, uv11, tex_index, normal, ao});
     mesh.vertices.push_back({v3, uv01, tex_index, normal, ao});
 
-    // Two triangles: (0,1,2) and (0,2,3) — counter-clockwise.
+    // Two triangles: (0,2,1) and (0,3,2) — corrected winding so the
+    // outward normal matches the CCW front-face convention.
     mesh.indices.push_back(base);
+    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base + 1);
-    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base);
-    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base + 3);
+    mesh.indices.push_back(base + 2);
 }
 
 /// Get the block id of the neighbor in the given direction.
@@ -301,12 +302,13 @@ void EmitGreedyQuad(MeshData& mesh, Face face, int slice_coord,
     mesh.vertices.push_back({v2, uv11, tex_index, normal, ao});
     mesh.vertices.push_back({v3, uv01, tex_index, normal, ao});
 
+    // Corrected winding: (0,2,1) and (0,3,2) so outward normal is CCW.
     mesh.indices.push_back(base);
+    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base + 1);
-    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base);
-    mesh.indices.push_back(base + 2);
     mesh.indices.push_back(base + 3);
+    mesh.indices.push_back(base + 2);
 }
 
 }  // namespace
